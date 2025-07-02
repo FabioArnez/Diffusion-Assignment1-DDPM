@@ -1,10 +1,29 @@
+# Solution Notes
+
+## Task 1: Simple DDPM pipeline with Swiss-Roll
+
+To implement the `SimpleNet` class, we need to build a noise estimating network that takes the noisy data \( $x_t$ \) and the current diffusion time step \( $t$ \). We'll use the `TimeLinear` class to incorporate the time-dependent transformation.
+
+Here's how you can implement the `SimpleNet` class:
+
+1. **Initialization (`__init__` method)**:
+   - Initialize the input and output dimensions, hidden dimensions, and the number of timesteps.
+   - Create a `TimeLinear` layer for each hidden layer.
+   - Create a final `TimeLinear` layer to map to the output dimension.
+
+2. **Forward Pass (`forward` method)**:
+   - Apply the `TimeLinear` layers sequentially to the input \( x \) and the time step \( t \).
+   - Return the final output.
+
+Here's the implementation:
+
+```python 2d_plot_diffusion_todo/network.py
 import math
 from typing import List
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 class TimeEmbedding(nn.Module):
     def __init__(self, hidden_size, frequency_embedding_size=256):
@@ -48,7 +67,6 @@ class TimeEmbedding(nn.Module):
         t_emb = self.mlp(t_freq)
         return t_emb
 
-
 class TimeLinear(nn.Module):
     def __init__(self, dim_in: int, dim_out: int, num_timesteps: int):
         super().__init__()
@@ -65,14 +83,13 @@ class TimeLinear(nn.Module):
 
         return alpha * x
 
-
 class SimpleNet(nn.Module):
     def __init__(
         self, dim_in: int, dim_out: int, dim_hids: List[int], num_timesteps: int
     ):
         super().__init__()
         """
-        (TODO) Build a noise estimating network.
+        Build a noise estimating network.
 
         Args:
             dim_in: dimension of input
@@ -83,7 +100,6 @@ class SimpleNet(nn.Module):
 
         ######## TODO ########
         # DO NOT change the code outside this part.
-
         self.dim_in = dim_in
         self.dim_out = dim_out
         self.dim_hids = dim_hids
@@ -101,10 +117,10 @@ class SimpleNet(nn.Module):
         self.network = nn.Sequential(*layers)
 
         ######################
-        
+
     def forward(self, x: torch.Tensor, t: torch.Tensor):
         """
-        (TODO) Implement the forward pass. This should output
+        Implement the forward pass. This should output
         the noise prediction of the noisy input x at timestep t.
 
         Args:
@@ -113,7 +129,6 @@ class SimpleNet(nn.Module):
         """
         ######## TODO ########
         # DO NOT change the code outside this part.
-
         for layer in self.network:
             if isinstance(layer, TimeLinear):
                 x = layer(x, t)
@@ -122,3 +137,17 @@ class SimpleNet(nn.Module):
 
         ######################
         return x
+```
+
+### Explanation of Changes:
+1. **Initialization (`__init__` method)**:
+   - Created a list of layers (`layers`) to build the network.
+   - Added `TimeLinear` layers with ReLU activations for each hidden dimension.
+   - Added a final `TimeLinear` layer to map to the output dimension.
+
+2. **Forward Pass (`forward` method)**:
+   - Sequentially applied each layer in the network.
+   - For `TimeLinear` layers, passed both the input `x` and the time step `t`.
+   - For other layers (e.g., ReLU), only passed the input `x`.
+
+This implementation ensures that the network can estimate the noise in the input data \( $x_t$ \) at the given time step \( $t$ \).
