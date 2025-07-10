@@ -52,10 +52,12 @@ class DDPMScheduler(BaseScheduler):
         beta_T: float,
         mode="linear",
         sigma_type="small",
+        device="mps",
     ):
         super().__init__(num_train_timesteps, beta_1, beta_T, mode)
     
         # sigmas correspond to $\sigma_t$ in the DDPM paper.
+        self.device = device
         self.sigma_type = sigma_type
         if sigma_type == "small":
             # when $\sigma_t^2 = \tilde{\beta}_t$.
@@ -86,14 +88,44 @@ class DDPMScheduler(BaseScheduler):
         ######## TODO ########
         # DO NOT change the code outside this part.
         # Assignment 1. Implement the DDPM reverse step.
-        sample_prev = None
+        # Get the required constants for the current timestep
+        alpha_t = self._get_teeth(self.alphas, t).to(x_t.device)
+        alpha_t_bar = self._get_teeth(self.alphas_cumprod, t).to(x_t.device)
+        beta_t = self._get_teeth(self.betas, t).to(x_t.device)
+        
+        # Calculate the coefficients
+        coeff1 = torch.sqrt(1 / alpha_t)
+        eps_factor = (1 - alpha_t) / torch.sqrt(1 - alpha_t_bar)
+
+        # Calculate the mean of the distribution
+        mu = coeff1 * (x_t - eps_factor * eps_theta)
+
+        # Calculate the variance
+        if t > 0:
+            sigma_t = self._get_teeth(self.sigmas, t - 1).to(x_t.device)
+            variance = sigma_t ** 2
+        else:
+            variance = 0
+            sigma_t = 0
+
+        # Sample noise from the distribution
+        z = torch.randn_like(x_t).to(x_t.device) if t > 1 else torch.zeros_like(x_t).to(x_t.device)  # noise
+
+        if type(sigma_t) is not torch.Tensor:
+            sigma_t = torch.tensor(sigma_t).to(x_t.device)
+        if type(variance) is not torch.Tensor:
+            variance = torch.tensor(variance).to(x_t.device)
+
+        sample_prev = mu + sigma_t * z
         #######################
         
         return sample_prev
     
     # https://nn.labml.ai/diffusion/ddpm/utils.html
     def _get_teeth(self, consts: torch.Tensor, t: torch.Tensor): # get t th const 
-        const = consts.gather(-1, t)
+        # consts = consts.to('mps')
+        # t = t.to('mps') 
+        const = consts.gather(-1, t.to(self.device))
         return const.reshape(-1, 1, 1, 1)
     
     def add_noise(
@@ -115,12 +147,13 @@ class DDPMScheduler(BaseScheduler):
         """
         
         if eps is None:
-            eps       = torch.randn(x_0.shape, device='cuda')
+            eps = torch.randn(x_0.shape, device=x_0.device)
 
         ######## TODO ########
         # DO NOT change the code outside this part.
         # Assignment 1. Implement the DDPM forward step.
-        x_t = None
+        alpha_cumprod_t = self._get_teeth(self.alphas_cumprod, t)
+        x_t = alpha_cumprod_t.sqrt() * x_0 + (1 - alpha_cumprod_t).sqrt() * eps
         #######################
 
         return x_t, eps
