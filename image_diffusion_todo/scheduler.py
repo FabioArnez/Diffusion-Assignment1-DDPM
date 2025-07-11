@@ -52,7 +52,7 @@ class DDPMScheduler(BaseScheduler):
         beta_T: float,
         mode="linear",
         sigma_type="small",
-        device="mps",
+        device="cuda",
     ):
         super().__init__(num_train_timesteps, beta_1, beta_T, mode)
     
@@ -89,34 +89,25 @@ class DDPMScheduler(BaseScheduler):
         # DO NOT change the code outside this part.
         # Assignment 1. Implement the DDPM reverse step.
         # Get the required constants for the current timestep
-        alpha_t = self._get_teeth(self.alphas, t).to(x_t.device)
-        alpha_t_bar = self._get_teeth(self.alphas_cumprod, t).to(x_t.device)
-        beta_t = self._get_teeth(self.betas, t).to(x_t.device)
-        
+        def extract(input, t: torch.Tensor, x: torch.Tensor):
+            if t.ndim == 0:
+                t = t.unsqueeze(0)
+            shape = x.shape
+            t = t.long().to(input.device)
+            out = torch.gather(input, 0, t)
+            reshape = [t.shape[0]] + [1] * (len(shape) - 1)
+            return out.reshape(*reshape)
+
+        sigmas_t = extract(self.sigmas, t, x_t)
+        alphas_t = extract(self.alphas, t, x_t)
+        alphas_cumprod_t = extract(self.alphas_cumprod, t, x_t)
+        z = torch.randn_like(x_t) if t > 0 else 0.0
         # Calculate the coefficients
-        coeff1 = torch.sqrt(1 / alpha_t)
-        eps_factor = (1 - alpha_t) / torch.sqrt(1 - alpha_t_bar)
-
+        coeff1 = torch.sqrt(1 / alphas_t)
+        eps_factor = (1 - alphas_t) / torch.sqrt(1 - alphas_cumprod_t)
         # Calculate the mean of the distribution
-        mu = coeff1 * (x_t - eps_factor * eps_theta)
-
-        # Calculate the variance
-        if t > 0:
-            sigma_t = self._get_teeth(self.sigmas, t - 1).to(x_t.device)
-            variance = sigma_t ** 2
-        else:
-            variance = 0
-            sigma_t = 0
-
-        # Sample noise from the distribution
-        z = torch.randn_like(x_t).to(x_t.device) if t > 1 else torch.zeros_like(x_t).to(x_t.device)  # noise
-
-        if type(sigma_t) is not torch.Tensor:
-            sigma_t = torch.tensor(sigma_t).to(x_t.device)
-        if type(variance) is not torch.Tensor:
-            variance = torch.tensor(variance).to(x_t.device)
-
-        sample_prev = mu + sigma_t * z
+        mu = coeff1 * (x_t - (eps_factor * eps_theta))
+        sample_prev = mu + sigmas_t * z
         #######################
         
         return sample_prev
@@ -125,7 +116,8 @@ class DDPMScheduler(BaseScheduler):
     def _get_teeth(self, consts: torch.Tensor, t: torch.Tensor): # get t th const 
         # consts = consts.to('mps')
         # t = t.to('mps') 
-        const = consts.gather(-1, t.to(self.device))
+        # const = consts.gather(-1, t.to(self.device))
+        const = consts.gather(-1, t)
         return const.reshape(-1, 1, 1, 1)
     
     def add_noise(
